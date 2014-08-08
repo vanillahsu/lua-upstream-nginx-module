@@ -35,6 +35,8 @@ static ngx_http_upstream_rr_peer_t *
     ngx_http_lua_upstream_lookup_peer(lua_State *L);
 static int ngx_http_lua_upstream_set_peer_down(lua_State * L);
 static int ngx_http_lua_upstream_add_server(lua_State * L);
+static int ngx_http_lua_upstream_in_servers(lua_State * L);
+static int ngx_http_lua_upstream_set_server_down(lua_State * L);
 
 
 static ngx_http_module_t ngx_http_lua_upstream_ctx = {
@@ -101,6 +103,12 @@ ngx_http_lua_upstream_create_module(lua_State * L)
 
     lua_pushcfunction(L, ngx_http_lua_upstream_add_server);
     lua_setfield(L, -2, "add_server");
+
+    lua_pushcfunction(L, ngx_http_lua_upstream_in_servers);
+    lua_setfield(L, -2, "in_servers");
+
+    lua_pushcfunction(L, ngx_http_lua_upstream_set_server_down);
+    lua_setfield(L, -2, "set_server_down");
 
     return 1;
 }
@@ -434,6 +442,89 @@ ngx_http_lua_upstream_add_server(lua_State * L)
     return 1;
 }
 
+
+/*
+ * upstream_name, server_addr+port
+ */
+static int
+ngx_http_lua_upstream_in_servers(lua_State * L)
+{
+    int                                   nargs, i, ret = 0;
+    ngx_http_upstream_server_t           *us;
+    ngx_http_upstream_srv_conf_t         *uscf;
+    ngx_str_t                             host, server;
+
+    nargs = lua_gettop(L);
+    if (nargs != 2) {
+        return luaL_error(L, "excepting 2 arguments, "
+                "but got %d", nargs);
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    uscf = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (uscf == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "upstream not found");
+        return 2;
+    }
+
+    server.data = (u_char *) luaL_checklstring(L, 2, &server.len);
+    us = uscf->servers->elts;
+
+    for (i = 0; i < uscf->servers->nelts; i++) {
+        if (us[i].name.len == server.len
+            && ngx_memcmp(us[i].name.data, server.data, server.len) == 0) {
+            ret = 1;
+        }
+    }
+
+    lua_pushboolean(L, ret);
+    return 1;
+}
+
+
+/*
+ * upstream_name, server_addr+port, down
+ */
+static int
+ngx_http_lua_upstream_set_server_down(lua_State * L)
+{
+    int                                   nargs, down, i, ret = 0;
+    ngx_http_upstream_server_t           *us;
+    ngx_http_upstream_srv_conf_t         *uscf;
+    ngx_str_t                             host, server;
+
+    nargs = lua_gettop(L);
+    if (nargs != 3) {
+        return luaL_error(L, "excepting 3 arguments, "
+                "but got %d", nargs);
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    uscf = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (uscf == NULL) {
+        lua_pushnil(L);
+        lua_pushliteral(L, "upstream not found");
+        return 2;
+    }
+
+    server.data = (u_char *) luaL_checklstring(L, 2, &server.len);
+    down = lua_toboolean(L, 3);
+    us = uscf->servers->elts;
+
+    for (i = 0; i < uscf->servers->nelts; i++) {
+        if (us[i].name.len == server.len
+            && ngx_memcmp(us[i].name.data, server.data, server.len) == 0) {
+            us[i].down = down;
+            ret = 1;
+        }
+    }
+
+    lua_pushboolean(L, ret);
+    return 1;
+}
 
 static ngx_http_upstream_rr_peer_t *
 ngx_http_lua_upstream_lookup_peer(lua_State *L)
